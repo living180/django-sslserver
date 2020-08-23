@@ -10,7 +10,10 @@ except ImportError:
     # removed in django version 3
     from django.utils._os import upath
 
+import django
+
 from django.core.servers.basehttp import WSGIRequestHandler
+from django.core.servers.basehttp import WSGIServer
 from django.core.management.base import CommandError
 from django.core.management.commands import runserver
 from django.contrib.staticfiles.handlers import StaticFilesHandler
@@ -29,23 +32,20 @@ try:
 except ImportError:
     from socket import error as WSGIServerException
 
-try:
-    # introduced in Django 2.0
-    from django.core.servers.basehttp import ThreadedWSGIServer
-except ImportError:
-    try:
-        import socketserver
-    except ImportError:
-        # Python 2 compatibility
-        import SocketServer as socketserver
-    from django.core.servers.basehttp import WSGIServer
 
-    class ThreadedWSGIServer(socketserver.ThreadingMixIn, WSGIServer):
-        """A threaded version of the WSGIServer"""
-        pass
+if django.VERSION[0] < 3:
+    from django.core.servers.basehttp import ServerHandler
+
+    _orig_cleanup_headers = ServerHandler.cleanup_headers
+
+    def _patched_cleanup_headers(self):
+        self.headers['Connection'] = 'close'
+        _orig_cleanup_headers(self)
+
+    ServerHandler.cleanup_headers = _patched_cleanup_headers
 
 
-class SecureHTTPServer(ThreadedWSGIServer):
+class SecureHTTPServer(WSGIServer):
     def __init__(self, address, handler_cls, certificate, key, ipv6=False):
         super(SecureHTTPServer, self).__init__(address, handler_cls, ipv6=ipv6)
         self.socket = ssl.wrap_socket(self.socket, certfile=certificate,
